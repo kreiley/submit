@@ -1,9 +1,13 @@
+
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
 #include <debug.h>
 #include <list.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include "threads/synch.h"
+
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -25,13 +29,11 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 
 /* A kernel thread or user process.
-
    Each thread structure is stored in its own 4 kB page.  The
    thread structure itself sits at the very bottom of the page
    (at offset 0).  The rest of the page is reserved for the
    thread's kernel stack, which grows downward from the top of
    the page (at offset 4 kB).  Here's an illustration:
-
         4 kB +---------------------------------+
              |          kernel stack           |
              |                |                |
@@ -53,22 +55,18 @@ typedef int tid_t;
              |               name              |
              |              status             |
         0 kB +---------------------------------+
-
    The upshot of this is twofold:
-
       1. First, `struct thread' must not be allowed to grow too
          big.  If it does, then there will not be enough room for
          the kernel stack.  Our base `struct thread' is only a
          few bytes in size.  It probably should stay well under 1
          kB.
-
       2. Second, kernel stacks must not be allowed to grow too
          large.  If a stack overflows, it will corrupt the thread
          state.  Thus, kernel functions should not allocate large
          structures or arrays as non-static local variables.  Use
          dynamic allocation with malloc() or palloc_get_page()
          instead.
-
    The first symptom of either of these problems will probably be
    an assertion failure in thread_current(), which checks that
    the `magic' member of the running thread's `struct thread' is
@@ -80,6 +78,17 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+
+struct status {
+	tid_t tid;
+	struct semaphore dead;
+	struct semaphore load;
+	int loaded;
+	bool died;
+	bool waiting;
+	struct list_elem elem;
+	int exit_status;
+};
 struct thread
   {
     /* Owned by thread.c. */
@@ -89,17 +98,31 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
-
-    /* Shared between thread.c and synch.c. */
+	/* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+	struct file *rox;
+	bool success;
+
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+
+/* LIST OF FILES: shows all the files a thread is using or could handle is set to 2+*/
+	struct list file_lists;
+	int handle;
+
+	tid_t parent;
+/* LIST OF CHILDPROCESSES OF THREAD*/
+	struct list child_processes;
+	struct status *process_status;
+   
+	struct dir * current_working_dir;
+
+	struct list lock_list;
   };
 
 /* If false (default), use round-robin scheduler.
@@ -125,7 +148,7 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
-
+bool thread_dead(int tid);
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
@@ -137,5 +160,6 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-
+void remove_locks(void);
+extern struct thread* get_thread_with_tid(tid_t tid);
 #endif /* threads/thread.h */
